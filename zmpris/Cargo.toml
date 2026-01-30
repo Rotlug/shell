@@ -1,0 +1,11 @@
+[package]
+name = "zmpris"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+futures = "0.3.31"
+thiserror = "2.0.18"
+tokio = { version = "1.49.0", features = ["full"] }
+tokio-stream = { version = "0.1.18", features = ["sync"] }
+zbus = "5.13.2"
