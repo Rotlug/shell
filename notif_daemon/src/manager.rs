@@ -109,8 +109,8 @@ impl Manager {
     ///
     /// # Errors
     /// Errors when the dbus signal fails to be emitted
-    pub async fn invoke_action(&self, id: u32, action: String) -> crate::Result<()> {
-        self.signal_emitter.action_invoked(id, action).await?;
+    pub async fn invoke_action(&self, id: u32, action_key: String) -> crate::Result<()> {
+        self.signal_emitter.action_invoked(id, action_key).await?;
 
         Ok(())
     }

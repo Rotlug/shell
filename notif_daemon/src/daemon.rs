@@ -14,7 +14,7 @@ use zbus::{fdo, interface, object_server::SignalEmitter, zvariant};
 
 use crate::{
     event::Event,
-    notification::{ClosingReason, Notification, Urgency},
+    notification::{Action, ClosingReason, Notification, Urgency},
 };
 
 #[derive(Debug)]
@@ -96,6 +96,9 @@ impl Daemon {
             .duration_since(UNIX_EPOCH)
             .map_err(|e| fdo::Error::Failed(format!("System time error: {e}")))?
             .as_secs();
+
+        let actions = Action::from_vec_strings(actions)
+            .map_err(|e| fdo::Error::Failed(format!("Failed to parse actions: {e}")))?;
 
         let notification = Notification {
             id,
