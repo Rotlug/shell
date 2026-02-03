@@ -1,0 +1,12 @@
+[package]
+name = "brightness"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ddc = "0.2.2"
+ddc-i2c = { version = "0.2.2", features = [
+  "i2c-linux",
+  "with-linux-enumerate",
+] }
+thiserror = "2.0.18"

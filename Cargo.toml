@@ -1,4 +1,4 @@
 [workspace]
 resolver = "3"
-members = ["shell", "zmpris", "pwmixer", "notif_daemon", "systray", "discord"]
+members = ["shell", "zmpris", "pwmixer", "notif_daemon", "systray", "discord", "brightness"]
 default-members = ["shell"]

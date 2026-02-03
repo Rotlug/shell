@@ -22,6 +22,7 @@
               cargo
               rustlings
               clippy
+              udev
 
               gtk4
               gtk4-layer-shell
