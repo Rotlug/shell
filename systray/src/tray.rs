@@ -30,6 +30,7 @@ impl Tray {
         let items = Arc::new(Mutex::new(HashMap::new()));
         let (event_tx, event_rx) = channel();
 
+        // Signals
         let watcher_proxy = StatusNotifierWatcherProxy::builder(&connection)
             .path("/StatusNotifierWatcher")?
             .build()
@@ -38,7 +39,6 @@ impl Tray {
         let mut item_registered = watcher_proxy
             .receive_status_notifier_item_registered()
             .await?;
-
         let mut item_unregistered = watcher_proxy
             .receive_status_notifier_item_unregistered()
             .await?;
@@ -48,6 +48,7 @@ impl Tray {
             .map(|n| n.as_str())
             .unwrap_or_default();
 
+        // Register myself as the host
         watcher_proxy.register_status_notifier_host(name).await?;
 
         let conn_task = connection.clone();
@@ -68,6 +69,15 @@ impl Tray {
                 }
             }
         });
+
+        // Get all system tray items that were present before this method was called, so we
+        // can be in sync.
+        let addresses = watcher_proxy.registered_status_notifier_items().await?;
+        for address in addresses {
+            let item = Arc::new(Item::new(connection.clone(), &address, event_tx.clone()).await?);
+            items.lock().await.insert(address.clone(), item.clone());
+            let _ = event_tx.send(Event::ItemAdded(address, item));
+        }
 
         Ok((
             Self {
