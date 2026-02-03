@@ -21,6 +21,7 @@ impl Monitor {
         }
 
         let _ = self.handle.set_vcp_feature(BRIGHTNESS, new_val);
+        let _ = self.handle.save_current_settings();
     }
 }
 
