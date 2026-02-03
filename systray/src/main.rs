@@ -11,6 +11,7 @@ async fn main() -> systray::Result<()> {
     while let Ok(event) = rx.recv() {
         match event {
             Event::ItemAdded(addr, item) => {
+                println!("Welcome {:?}", item.title().await);
                 items.insert(addr, item);
             }
             Event::ItemRemoved(addr) => {
