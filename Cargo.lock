@@ -1446,6 +1446,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "systray"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "serde",
+ "thiserror",
+ "tokio",
+ "zbus",
+]
+
+[[package]]
 name = "target-lexicon"
 version = "0.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
