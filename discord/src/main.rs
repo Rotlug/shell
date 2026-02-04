@@ -1,4 +1,4 @@
-use discord::listener::Listener;
+use discord::Listener;
 
 #[tokio::main]
 async fn main() -> discord::Result<()> {

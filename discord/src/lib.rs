@@ -1,6 +1,10 @@
 mod error;
 pub use error::*;
 
-pub mod event;
-pub mod listener;
+mod event;
+pub use event::*;
+
+mod listener;
+pub use listener::*;
+
 pub mod user;
