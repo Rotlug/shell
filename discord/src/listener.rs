@@ -1,10 +1,11 @@
-use std::{
-    sync::mpsc::{Receiver, Sender, channel},
-    time::Duration,
-};
+use std::time::Duration;
 
 use futures::{SinkExt, StreamExt};
-use tokio::{task::JoinHandle, time};
+use tokio::{
+    sync::mpsc::{Receiver, Sender, channel},
+    task::JoinHandle,
+    time,
+};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 use crate::{event::Event, user::User};
@@ -16,7 +17,7 @@ pub struct Listener {
 impl Listener {
     #[must_use]
     pub fn new(url: String) -> (Self, Receiver<Event>) {
-        let (event_tx, event_rx) = channel();
+        let (event_tx, event_rx) = channel(16);
         let mut handles = vec![];
 
         //receiver just prints whatever it gets
@@ -42,7 +43,8 @@ impl Listener {
                                 // Parse json into Vec<User> and send diff to rx
                                 if let Ok(new_user_list) = serde_json::from_str::<Vec<User>>(&text)
                                 {
-                                    send_user_events(&old_user_list, &new_user_list, &event_tx);
+                                    send_user_events(&old_user_list, &new_user_list, &event_tx)
+                                        .await;
                                     old_user_list = new_user_list;
                                 }
                             }
@@ -68,16 +70,16 @@ impl Listener {
     }
 }
 
-fn send_user_events(old_list: &[User], new_list: &[User], event_tx: &Sender<Event>) {
+async fn send_user_events(old_list: &[User], new_list: &[User], event_tx: &Sender<Event>) {
     for user in new_list {
         if !old_list.contains(user) {
-            let _ = event_tx.send(Event::UserJoined(user.clone()));
+            let _ = event_tx.send(Event::UserJoined(user.clone())).await;
         }
     }
 
     for user in old_list {
         if !new_list.contains(user) {
-            let _ = event_tx.send(Event::UserLeft(user.name.clone()));
+            let _ = event_tx.send(Event::UserLeft(user.name.clone())).await;
         }
     }
 }
