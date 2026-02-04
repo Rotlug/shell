@@ -1,7 +1,8 @@
-use std::sync::mpsc::Sender;
-
 use futures::StreamExt;
-use tokio::{sync::Mutex, task::JoinHandle};
+use tokio::{
+    sync::{Mutex, mpsc::Sender},
+    task::JoinHandle,
+};
 use zbus::Connection;
 
 use crate::{

@@ -4,11 +4,11 @@ use systray::{event::Event, tray::Tray};
 
 #[tokio::main]
 async fn main() -> systray::Result<()> {
-    let (tray, rx) = Tray::new().await?;
+    let (tray, mut rx) = Tray::new().await?;
 
     let mut items = HashMap::new();
 
-    while let Ok(event) = rx.recv() {
+    while let Some(event) = rx.recv().await {
         match event {
             Event::ItemAdded(addr, item) => {
                 println!("Welcome {:?}", item.title().await);

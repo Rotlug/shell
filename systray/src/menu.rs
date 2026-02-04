@@ -1,10 +1,7 @@
-use std::{
-    sync::{Arc, mpsc::Sender},
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use futures::{StreamExt, lock::Mutex};
-use tokio::task::JoinHandle;
+use tokio::{sync::mpsc::Sender, task::JoinHandle};
 use zbus::{
     Connection,
     zvariant::{OwnedObjectPath, OwnedValue, Structure, Value},
@@ -12,7 +9,7 @@ use zbus::{
 
 use crate::{
     dbus::dbusmenu::{DBusMenuProxy, MenuLayout},
-    event::{self, Event},
+    event::Event,
 };
 
 /// `Menu` is used for displaying interacting with the right-click menu of a system tray item.
@@ -61,7 +58,9 @@ impl Menu {
                 if let Ok((_, layout)) = proxy.get_layout(0, -1, &[]).await
                     && let Ok(items) = Self::parse_layout(layout)
                 {
-                    let _ = event_tx.send(Event::MenuChanged(owner_address.clone(), items));
+                    let _ = event_tx
+                        .send(Event::MenuChanged(owner_address.clone(), items))
+                        .await;
                 }
             }
         });

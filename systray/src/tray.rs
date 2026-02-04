@@ -1,13 +1,10 @@
-use std::{
-    collections::HashMap,
-    sync::{
-        Arc,
-        mpsc::{Receiver, Sender, channel},
-    },
-};
+use std::{collections::HashMap, sync::Arc};
 
 use futures::StreamExt;
-use tokio::sync::Mutex;
+use tokio::sync::{
+    Mutex,
+    mpsc::{Receiver, Sender, channel},
+};
 use zbus::Connection;
 
 use crate::{
@@ -28,7 +25,7 @@ impl Tray {
     pub async fn new() -> crate::Result<(Self, Receiver<Event>)> {
         let connection = zbus::Connection::session().await?;
         let items = Arc::new(Mutex::new(HashMap::new()));
-        let (event_tx, event_rx) = channel();
+        let (event_tx, event_rx) = channel(16);
 
         // Signals
         let watcher_proxy = StatusNotifierWatcherProxy::builder(&connection)
@@ -76,7 +73,7 @@ impl Tray {
         for address in addresses {
             let item = Arc::new(Item::new(connection.clone(), &address, event_tx.clone()).await?);
             items.lock().await.insert(address.clone(), item.clone());
-            let _ = event_tx.send(Event::ItemAdded(address, item));
+            let _ = event_tx.send(Event::ItemAdded(address, item)).await;
         }
 
         Ok((
@@ -108,7 +105,9 @@ async fn handle_item_registered(
         let _ = item.watch_signals().await;
 
         items.lock().await.insert(address.to_string(), item.clone());
-        let _ = event_tx.send(Event::ItemAdded(address.to_string(), item));
+        let _ = event_tx
+            .send(Event::ItemAdded(address.to_string(), item))
+            .await;
     }
 }
 
@@ -121,6 +120,6 @@ async fn handle_item_unregistered(
 
     if let Ok(address) = address {
         items.lock().await.remove(address);
-        let _ = event_tx.send(Event::ItemRemoved(address.to_string()));
+        let _ = event_tx.send(Event::ItemRemoved(address.to_string())).await;
     }
 }
