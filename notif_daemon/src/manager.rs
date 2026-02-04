@@ -61,7 +61,7 @@ impl Manager {
                     }
                 }
 
-                let _ = outer_tx.send(event);
+                let _ = outer_tx.send(event).await;
             }
         });
 
