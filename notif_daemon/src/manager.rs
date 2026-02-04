@@ -1,12 +1,9 @@
-use std::{
-    collections::HashMap,
-    sync::{
-        Arc,
-        mpsc::{Receiver, Sender, channel},
-    },
-};
+use std::{collections::HashMap, sync::Arc};
 
-use tokio::sync::Mutex;
+use tokio::sync::{
+    Mutex,
+    mpsc::{Receiver, Sender, channel},
+};
 use zbus::{Connection, object_server::SignalEmitter};
 
 use crate::{
@@ -31,9 +28,9 @@ impl Manager {
     /// daemon is in use.
     pub async fn new() -> crate::Result<(Self, Receiver<Event>)> {
         // Communication between the `Daemon` and the `Manager`
-        let (inner_tx, inner_rx) = channel();
+        let (inner_tx, mut inner_rx) = channel(16);
         // Communication between the `Manager` and the caller
-        let (outer_tx, outer_rx) = channel();
+        let (outer_tx, outer_rx) = channel(16);
 
         let notifications = Arc::new(Mutex::new(HashMap::new()));
 
@@ -52,7 +49,7 @@ impl Manager {
         let notifications_task = notifications.clone();
 
         tokio::spawn(async move {
-            while let Ok(event) = inner_rx.recv() {
+            while let Some(event) = inner_rx.recv().await {
                 let mut notifs = notifications_task.lock().await;
 
                 match event {

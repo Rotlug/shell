@@ -4,10 +4,10 @@ use notif_daemon::{event::Event, manager::Manager, notification::ClosingReason};
 
 #[tokio::main]
 async fn main() -> notif_daemon::Result<()> {
-    let (mgr, rx) = Manager::new().await?;
+    let (mgr, mut rx) = Manager::new().await?;
     let mgr = Arc::new(mgr);
 
-    while let Ok(event) = rx.recv() {
+    while let Some(event) = rx.recv().await {
         dbg!(&event);
         match event {
             Event::Incoming(notif) => {

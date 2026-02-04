@@ -6,10 +6,11 @@
 
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex, mpsc::Sender},
+    sync::{Arc, Mutex},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use tokio::sync::mpsc::Sender;
 use zbus::{fdo, interface, object_server::SignalEmitter, zvariant};
 
 use crate::{
@@ -114,6 +115,7 @@ impl Daemon {
 
         self.event_tx
             .send(Event::Incoming(notification))
+            .await
             .map_err(|e| fdo::Error::Failed(format!("Failed to send event {e}")))?;
 
         Ok(id)
@@ -123,6 +125,7 @@ impl Daemon {
     async fn close_notification(&self, id: u32) -> fdo::Result<()> {
         self.event_tx
             .send(Event::Closed(id))
+            .await
             .map_err(|e| fdo::Error::Failed(format!("Failed to send event: {e}")))?;
 
         Ok(())
