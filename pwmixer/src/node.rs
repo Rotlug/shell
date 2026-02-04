@@ -1,10 +1,6 @@
 // Lots of this code is from https://github.com/tsowell/wiremix
 
-use std::{
-    fmt::Display,
-    rc::Rc,
-    sync::{Arc, mpsc::Sender},
-};
+use std::{fmt::Display, rc::Rc, sync::Arc};
 
 use libspa::{
     param::ParamType,
@@ -16,6 +12,7 @@ use pipewire::{
     proxy::Listener,
     registry::{GlobalObject, Registry},
 };
+use tokio::sync::mpsc;
 
 use crate::{Event, ObjectId, deserialize::deserialize};
 
@@ -64,7 +61,7 @@ pub struct NodeTracker {
 pub fn monitor_node(
     registry: &Registry,
     object: &GlobalObject<&DictRef>,
-    event_tx: &Sender<Event>,
+    event_tx: &mpsc::Sender<Event>,
 ) -> Option<NodeTracker> {
     let props = object.props?;
 
@@ -125,7 +122,7 @@ pub fn monitor_node(
 
     node.subscribe_params(&[ParamType::Props]);
 
-    let _ = event_tx.send(Event::NodeAdded(node_props.clone()));
+    let _ = event_tx.blocking_send(Event::NodeAdded(node_props.clone()));
 
     // also return the listener because if i don't then it gets dropped and stops working
     Some(NodeTracker {
@@ -136,7 +133,7 @@ pub fn monitor_node(
 }
 
 /// Send events to `event_tx` based on which new params have been sent through pipewire.
-pub fn node_new_params(obj: Object, node: &Arc<NodeProps>, event_tx: &Sender<Event>) {
+pub fn node_new_params(obj: Object, node: &Arc<NodeProps>, event_tx: &mpsc::Sender<Event>) {
     for prop in obj.properties {
         match prop.key {
             libspa_sys::SPA_PROP_channelVolumes => {
@@ -153,12 +150,12 @@ pub fn node_new_params(obj: Object, node: &Arc<NodeProps>, event_tx: &Sender<Eve
                         })
                         .collect();
 
-                    let _ = event_tx.send(Event::NodeVolumesChanged(node.id, volumes));
+                    let _ = event_tx.blocking_send(Event::NodeVolumesChanged(node.id, volumes));
                 }
             }
             libspa_sys::SPA_PROP_mute => {
                 if let Value::Bool(value) = prop.value {
-                    let _ = event_tx.send(Event::NodeMuted(node.id, value));
+                    let _ = event_tx.blocking_send(Event::NodeMuted(node.id, value));
                 }
             }
             _ => (),

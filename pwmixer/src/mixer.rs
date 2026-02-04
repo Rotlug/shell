@@ -2,11 +2,12 @@ use std::{
     cell::RefCell,
     collections::HashMap,
     rc::Rc,
-    sync::{Arc, mpsc},
+    sync::Arc,
     thread::{self, JoinHandle},
 };
 
 use pipewire::{context::ContextRc, main_loop::MainLoopRc, node::Node, types::ObjectType};
+use tokio::sync::mpsc;
 
 use crate::{
     Command, Event, MetadataChange, ObjectId,
@@ -23,8 +24,8 @@ type NodeMap = HashMap<ObjectId, NodeTracker>;
 
 impl Mixer {
     #[must_use]
-    pub fn new(command_rx: mpsc::Receiver<Command>) -> (Self, mpsc::Receiver<Event>) {
-        let (event_tx, event_rx) = mpsc::channel();
+    pub fn new(mut command_rx: mpsc::Receiver<Command>) -> (Self, mpsc::Receiver<Event>) {
+        let (event_tx, event_rx) = mpsc::channel(16);
 
         // pipewire channel is a non blocking version of mpsc::channel
         let (pipewire_tx, pipewire_rx) = pipewire::channel::channel();
@@ -46,7 +47,7 @@ impl Mixer {
             let node_meta = nodes.clone();
 
             let metadata_event = metadata.clone();
-            let metadata_cmd = metadata.clone();
+            let metadata_cmd = metadata;
 
             let (meta_tx, meta_rx) = pipewire::channel::channel();
 
@@ -80,7 +81,7 @@ impl Mixer {
                 .global_remove(move |id| {
                     let removed = nodes.borrow_mut().remove(&ObjectId(id));
                     if removed.is_some() {
-                        let _ = event_tx_event.send(Event::NodeRemoved(ObjectId(id)));
+                        let _ = event_tx_event.blocking_send(Event::NodeRemoved(ObjectId(id)));
                     }
                 })
                 .register();
@@ -135,14 +136,14 @@ impl Mixer {
                             return;
                         };
 
-                        let _ = event_tx_meta.send(Event::DefaultSinkChanged(node.id));
+                        let _ = event_tx_meta.blocking_send(Event::DefaultSinkChanged(node.id));
                     }
                     MetadataChange::DefaultSource(name) => {
                         let Some(node) = node_meta.borrow().find_props_by_name(name) else {
                             return;
                         };
 
-                        let _ = event_tx_meta.send(Event::DefaultSourceChanged(node.id));
+                        let _ = event_tx_meta.blocking_send(Event::DefaultSourceChanged(node.id));
                     }
                 });
 
@@ -151,12 +152,12 @@ impl Mixer {
             Ok(())
         });
 
-        /* This thread takes events from the regular rx and sends them to the
-         * non-blokcing pipewire version, so that the user can use std channels
-         * and will not have to use any pipewire specific data structures.
+        /* This task if for sending the commands from the tokio channel to the pipewire
+         * channel, so that the user of this struct does not have to use the pipewire
+         * specific channel type.
          */
-        thread::spawn(move || {
-            while let Ok(command) = command_rx.recv() {
+        tokio::spawn(async move {
+            while let Some(command) = command_rx.recv().await {
                 let _ = pipewire_tx.send(command);
             }
         });
