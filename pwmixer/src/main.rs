@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::mpsc};
 
-use pwmixer::{Command, Event, mixer::Mixer};
+use pwmixer::{Command, Event, Mixer};
 
 fn main() {
     let (cmd_tx, cmd_rx) = mpsc::channel();

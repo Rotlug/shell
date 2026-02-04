@@ -1,7 +1,8 @@
 mod event;
 pub use event::*;
 
-pub mod mixer;
+mod mixer;
+pub use mixer::*;
 
 mod error;
 pub use error::*;
@@ -13,4 +14,4 @@ pub use object_id::*;
 
 pub mod node;
 
-pub mod metadata;
+mod metadata;

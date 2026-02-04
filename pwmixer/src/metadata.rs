@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use pipewire::{
     channel::Sender,
-    metadata::{Metadata, MetadataListener},
+    metadata::Metadata,
     proxy::Listener,
     registry::{GlobalObject, Registry},
 };
