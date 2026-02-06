@@ -1,3 +1,5 @@
+// Lots of this code is from https://github.com/tsowell/wiremix
+
 use std::{collections::HashMap, sync::Arc};
 
 use libspa::{
@@ -21,6 +23,9 @@ pub struct DeviceTracker {
     pub id: ObjectId,
 
     /// Maps from card device to route index
+    ///
+    /// Key -> card.profile.device of `Node`
+    /// Value -> Route index of `Device`
     route_map: Arc<Mutex<HashMap<i32, i32>>>,
 }
 
@@ -73,12 +78,12 @@ pub fn monitor_device(
     Some(DeviceTracker {
         listener: Box::new(listener),
         device,
-        // hints,
         id,
         route_map,
     })
 }
 
+/// Handles parameter changes for device
 fn device_new_params(object: &Object, route_map: &Mutex<HashMap<i32, i32>>) {
     let mut route_index = None;
     let mut card_device = None;
@@ -105,11 +110,16 @@ fn device_new_params(object: &Object, route_map: &Mutex<HashMap<i32, i32>>) {
 }
 
 impl DeviceTracker {
+    /// Set the properties for a specific route on this device.
+    ///
+    /// If the `device_id` in `hints` does not much the id of this current device, nothing will
+    /// happen.
     fn set_route_properties(&self, hints: &DeviceHints, properties: Vec<Property>) {
         if self.id != hints.device_id {
             return;
         }
 
+        // Find the route index corresponding to the `card_device` in the map
         let Some(route) = self
             .route_map
             .blocking_lock()
@@ -166,6 +176,7 @@ impl DeviceTracker {
         }
     }
 
+    /// Set the volume for a specific route on this device.
     pub(crate) fn set_route_volume(&self, hints: &DeviceHints, volume: f32) {
         let volume = volume.powi(3).clamp(0.0, 1.0);
 
@@ -179,6 +190,7 @@ impl DeviceTracker {
         );
     }
 
+    /// Set wether the device is muted or not.
     pub(crate) fn set_route_mute(&self, hints: &DeviceHints, muted: bool) {
         self.set_route_properties(
             hints,
