@@ -11,8 +11,9 @@ use tokio::sync::mpsc;
 
 use crate::{
     Command, Event, MetadataChange, ObjectId,
+    device::{self, DeviceHints, DeviceTracker},
     metadata::{self, MetadataControl, MetadataTracker},
-    node::{self, NodeControl, NodeProps, NodeTracker},
+    node::{self, NodeProps, NodeTracker},
 };
 
 /// Responsible for the setup and destruction of the pipewire main loop thread.
@@ -21,6 +22,7 @@ pub struct Mixer {
 }
 
 type NodeMap = HashMap<ObjectId, NodeTracker>;
+type DeviceMap = HashMap<ObjectId, DeviceTracker>;
 
 impl Mixer {
     #[must_use]
@@ -40,11 +42,16 @@ impl Mixer {
             let registry_clone = registry.clone();
 
             let nodes: Rc<RefCell<NodeMap>> = Rc::new(RefCell::new(HashMap::new()));
+            let devices: Rc<RefCell<DeviceMap>> = Rc::new(RefCell::new(HashMap::new()));
+
             let metadata: Rc<RefCell<Option<MetadataTracker>>> = Rc::new(RefCell::new(None));
 
             let nodes_event = nodes.clone();
             let nodes_cmd = nodes.clone();
             let node_meta = nodes.clone();
+
+            let devices_event = devices.clone();
+            let devices_command = devices.clone();
 
             let metadata_event = metadata.clone();
             let metadata_cmd = metadata;
@@ -66,6 +73,12 @@ impl Mixer {
                         None
                     };
 
+                    let device = if object.type_ == ObjectType::Device {
+                        device::monitor_device(&registry_clone, object)
+                    } else {
+                        None
+                    };
+
                     if metadata_event.borrow().is_none() {
                         *metadata_event.borrow_mut() = if object.type_ == ObjectType::Metadata {
                             metadata::monitor_metadata(&registry_clone, object, &meta_tx)
@@ -76,6 +89,12 @@ impl Mixer {
 
                     if let Some(node) = node {
                         nodes_event.borrow_mut().insert(ObjectId(object.id), node);
+                    }
+
+                    if let Some(device) = device {
+                        devices_event
+                            .borrow_mut()
+                            .insert(ObjectId(object.id), device);
                     }
                 })
                 .global_remove(move |id| {
@@ -89,19 +108,28 @@ impl Mixer {
             // Command listener
             let _command_listener =
                 pipewire_rx.attach(mainloop.loop_(), move |command| match command {
-                    Command::ChangeVolumes(id, new_volumes) => {
-                        if let Some(node) = nodes_cmd.borrow().find_node(id) {
-                            node.set_volumes(new_volumes);
-                        }
-                    }
                     Command::ChangeVolume(id, volume) => {
-                        if let Some(node) = nodes_cmd.borrow().find_node(id) {
-                            node.set_volume(volume);
+                        if let Some(node) = nodes_cmd.borrow().get(&id) {
+                            // Set volume through the associated device if it exists.
+                            if let Some((device, hints)) =
+                                associated_device(node, &devices_command.borrow())
+                            {
+                                device.set_route_volume(&hints, volume);
+                            } else {
+                                node.set_volume(volume);
+                            }
                         }
                     }
                     Command::Mute(id, muted) => {
-                        if let Some(node) = nodes_cmd.borrow().find_node(id) {
-                            node.set_mute(muted);
+                        if let Some(node) = nodes_cmd.borrow().get(&id) {
+                            // Set mute status through the associated device if it exists
+                            if let Some((device, hints)) =
+                                associated_device(node, &devices_command.borrow())
+                            {
+                                device.set_route_mute(&hints, muted);
+                            } else {
+                                node.set_mute(muted);
+                            }
                         }
                     }
                     Command::ChangeDefaultSource(id) => {
@@ -109,9 +137,9 @@ impl Mixer {
                             return;
                         };
 
-                        if metadata_cmd.borrow().is_some() {
-                            let m = metadata_cmd.borrow().as_ref().unwrap().metadata.clone();
-                            m.set_default_source(&node.name);
+                        let metadata = metadata_cmd.borrow();
+                        if let Some(ref metadata) = *metadata {
+                            metadata.metadata.set_default_source(&node.name);
                         }
                     }
                     Command::ChangeDefaultSink(id) => {
@@ -119,9 +147,9 @@ impl Mixer {
                             return;
                         };
 
-                        if metadata_cmd.borrow().is_some() {
-                            let m = metadata_cmd.borrow().as_ref().unwrap().metadata.clone();
-                            m.set_default_sink(&node.name);
+                        let metadata = metadata_cmd.borrow();
+                        if let Some(ref metadata) = *metadata {
+                            metadata.metadata.set_default_sink(&node.name);
                         }
                     }
                     Command::Quit => {
@@ -166,19 +194,14 @@ impl Mixer {
     }
 }
 
+// Ergonomic methods for common operations on the node map
 trait FindNode {
-    fn find_node(&self, id: ObjectId) -> Option<Rc<Node>>;
-
     fn find_props(&self, id: ObjectId) -> Option<Arc<NodeProps>>;
 
     fn find_props_by_name(&self, name: String) -> Option<Arc<NodeProps>>;
 }
 
 impl FindNode for NodeMap {
-    fn find_node(&self, id: ObjectId) -> Option<Rc<Node>> {
-        self.get(&id).map(|a| a.node.clone())
-    }
-
     fn find_props(&self, id: ObjectId) -> Option<Arc<NodeProps>> {
         self.get(&id).map(|a| a.props.clone())
     }
@@ -188,4 +211,16 @@ impl FindNode for NodeMap {
             .find(|(_, node)| name.contains(&node.props.name))
             .map(|(_, node)| node.props.clone())
     }
+}
+
+/// Find the associated device for a node, if there is one.
+fn associated_device<'a>(
+    node: &NodeTracker,
+    devices: &'a DeviceMap,
+) -> Option<(&'a DeviceTracker, DeviceHints)> {
+    let lock = node.props.device_hints.blocking_lock();
+    let hints = lock.as_ref()?;
+    let device = devices.get(&hints.device_id)?;
+
+    Some((device, hints.clone()))
 }

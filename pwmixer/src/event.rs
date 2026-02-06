@@ -6,7 +6,7 @@ use crate::{ObjectId, node::NodeProps};
 pub enum Event {
     NodeAdded(Arc<NodeProps>),
     NodeRemoved(ObjectId),
-    NodeVolumesChanged(ObjectId, Vec<f32>),
+    NodeVolumeChanged(ObjectId, f32),
     NodeMuted(ObjectId, bool),
     DefaultSourceChanged(ObjectId),
     DefaultSinkChanged(ObjectId),
@@ -14,7 +14,6 @@ pub enum Event {
 
 #[derive(Debug)]
 pub enum Command {
-    ChangeVolumes(ObjectId, Vec<f32>),
     ChangeVolume(ObjectId, f32),
     Mute(ObjectId, bool),
     ChangeDefaultSource(ObjectId),

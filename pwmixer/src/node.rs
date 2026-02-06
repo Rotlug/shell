@@ -4,17 +4,19 @@ use std::{fmt::Display, rc::Rc, sync::Arc};
 
 use libspa::{
     param::ParamType,
-    pod::{Object, Pod, Property, PropertyFlags, Value, ValueArray, serialize::PodSerializer},
+    pod::{Object, Pod, Property, PropertyFlags, Value, serialize::PodSerializer},
     utils::dict::DictRef,
 };
+
 use pipewire::{
-    node::Node,
+    node::{Node, NodeChangeMask, NodeInfoRef},
     proxy::Listener,
     registry::{GlobalObject, Registry},
 };
-use tokio::sync::mpsc;
 
-use crate::{Event, ObjectId, deserialize::deserialize};
+use tokio::sync::{Mutex, mpsc};
+
+use crate::{Event, ObjectId, deserialize::deserialize, device::DeviceHints};
 
 #[derive(PartialEq, Eq, Hash, Debug)]
 pub enum NodeKind {
@@ -25,7 +27,7 @@ pub enum NodeKind {
 }
 
 /// Represents a Mic, Speaker, Headphone, or an application that is playing some audio.
-#[derive(PartialEq, Eq, Hash, Debug)]
+#[derive(Debug)]
 pub struct NodeProps {
     pub name: String,
     pub description: Option<String>,
@@ -33,6 +35,8 @@ pub struct NodeProps {
     pub app_name: Option<String>,
     pub id: ObjectId,
     pub kind: NodeKind,
+
+    pub(crate) device_hints: Mutex<Option<DeviceHints>>,
 }
 
 impl Display for NodeProps {
@@ -105,9 +109,11 @@ pub fn monitor_node(
         app_name,
         id,
         kind,
+        device_hints: Mutex::new(None),
     });
 
-    let node_info_clone = node_props.clone();
+    let node_props_params = node_props.clone();
+    let node_props_info = node_props.clone();
     let event_tx_clone = event_tx.clone();
     let listener = node
         .add_listener_local()
@@ -116,7 +122,14 @@ pub fn monitor_node(
                 return;
             };
 
-            node_new_params(obj, &node_info_clone, &event_tx_clone.clone());
+            node_new_params(obj, &node_props_params, &event_tx_clone.clone());
+        })
+        .info(move |info| {
+            for change in info.change_mask().iter() {
+                if change == NodeChangeMask::PROPS {
+                    node_new_info(info, &node_props_info);
+                }
+            }
         })
         .register();
 
@@ -132,25 +145,30 @@ pub fn monitor_node(
     })
 }
 
+pub fn node_new_info(info: &NodeInfoRef, node: &NodeProps) -> Option<()> {
+    let props = info.props()?;
+
+    let device_id = props.get("device.id")?.parse::<u32>().ok()?;
+    let card_device = props.get("card.profile.device")?.parse::<i32>().ok()?;
+
+    *node.device_hints.blocking_lock() = Some(DeviceHints {
+        device_id: ObjectId(device_id),
+        card_device,
+    });
+
+    None
+}
+
 /// Send events to `event_tx` based on which new params have been sent through pipewire.
-pub fn node_new_params(obj: Object, node: &Arc<NodeProps>, event_tx: &mpsc::Sender<Event>) {
+pub fn node_new_params(obj: Object, node: &NodeProps, event_tx: &mpsc::Sender<Event>) {
     for prop in obj.properties {
         match prop.key {
             libspa_sys::SPA_PROP_channelVolumes => {
-                if let Value::ValueArray(libspa::pod::ValueArray::Float(values)) = prop.value {
-                    let volumes = values
-                        .iter()
-                        .map(|vol| {
-                            /* NOTE: I don't know why but doing this makes
-                             * the resulting number the same as the value i see in the kde
-                             * plasma volume meter so im guessing its more accure to
-                             * how humans hear the sound or something
-                             */
-                            vol.powf(1.0 / 3.0)
-                        })
-                        .collect();
-
-                    let _ = event_tx.blocking_send(Event::NodeVolumesChanged(node.id, volumes));
+                if let Value::ValueArray(libspa::pod::ValueArray::Float(vols)) = prop.value
+                    && let Some(vol) = vols.first()
+                {
+                    let value = vol.cbrt();
+                    let _ = event_tx.blocking_send(Event::NodeVolumeChanged(node.id, value));
                 }
             }
             libspa_sys::SPA_PROP_mute => {
@@ -163,29 +181,11 @@ pub fn node_new_params(obj: Object, node: &Arc<NodeProps>, event_tx: &mpsc::Send
     }
 }
 
-pub trait NodeControl {
+impl NodeTracker {
     /// Set any properties of this node,
     /// NOTE: Properties that are not specified in the `properties` Vec will be
     /// unchanged.
-    fn set_properties(&self, properties: Vec<Property>);
-
-    /// Set the value of each channels volume in the node.
-    /// A `Vec` is needed here because most nodes are stereo, so they have more than
-    /// one channel (L/R).
-    ///
-    /// Most of the time you don't care about setting the volumes of each channels
-    /// individually, in which case its more ergonomic to call `set_volume`
-    fn set_volumes(&self, volumes: Vec<f32>);
-
-    /// A wrapper around `set_volumes` that wraps the given `volume` in a `Vec`.
-    /// This sets each channel volume in the node to the same `volume`.
-    fn set_volume(&self, volume: f32);
-
-    fn set_mute(&self, muted: bool);
-}
-
-impl NodeControl for Node {
-    fn set_properties(&self, properties: Vec<Property>) {
+    pub fn set_properties(&self, properties: Vec<Property>) {
         let values = PodSerializer::serialize(
             std::io::Cursor::new(Vec::new()),
             &Value::Object(Object {
@@ -198,36 +198,29 @@ impl NodeControl for Node {
         if let Ok((values, _)) = values
             && let Some(pod) = Pod::from_bytes(&values.into_inner())
         {
-            self.set_param(ParamType::Props, 0, pod);
+            self.node.set_param(ParamType::Props, 0, pod);
         }
     }
 
-    fn set_volumes(&self, volumes: Vec<f32>) {
-        let volumes = volumes.iter().map(|f| f.powi(3)).collect();
+    /// Sets the nodes volume.
+    /// NOTE: If the node is associated with a device, its better to find the device using
+    /// `props.device_hints` and change the volume using the device's `set_route_volume`
+    /// parameter.
+    pub fn set_volume(&self, volume: f32) {
+        let volume = volume.powi(3).clamp(0.0, 1.0);
 
         self.set_properties(vec![Property {
             key: libspa_sys::SPA_PROP_channelVolumes,
             flags: PropertyFlags::empty(),
-            value: Value::ValueArray(ValueArray::Float(volumes)),
+            value: Value::ValueArray(libspa::pod::ValueArray::Float(vec![volume])),
         }]);
     }
 
-    fn set_volume(&self, volume: f32) {
-        self.set_volumes(vec![volume]);
-    }
-
-    fn set_mute(&self, muted: bool) {
-        self.set_properties(vec![
-            Property {
-                key: libspa_sys::SPA_PROP_mute,
-                flags: PropertyFlags::empty(),
-                value: Value::Bool(muted),
-            },
-            Property {
-                key: libspa_sys::SPA_PROP_mute,
-                flags: PropertyFlags::empty(),
-                value: Value::Bool(muted),
-            },
-        ]);
+    pub fn set_mute(&self, muted: bool) {
+        self.set_properties(vec![Property {
+            key: libspa_sys::SPA_PROP_mute,
+            flags: PropertyFlags::empty(),
+            value: Value::Bool(muted),
+        }]);
     }
 }

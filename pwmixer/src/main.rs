@@ -18,9 +18,9 @@ async fn main() {
             Event::NodeRemoved(id) => {
                 nodes.remove(&id);
             }
-            Event::NodeVolumesChanged(id, vols) => {
+            Event::NodeVolumeChanged(id, vol) => {
                 let node = nodes.get(&id).unwrap();
-                println!("{node}: {vols:?}");
+                println!("{node}: {vol:?}");
             }
             Event::NodeMuted(id, muted) => {
                 let node = nodes.get(&id).unwrap();

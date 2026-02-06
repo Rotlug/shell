@@ -14,8 +14,8 @@ use crate::{MetadataChange, ObjectId};
 
 pub struct MetadataTracker {
     pub metadata: Rc<Metadata>,
-    pub listener: Box<dyn Listener>,
-    pub id: ObjectId,
+    pub _listener: Box<dyn Listener>,
+    pub _id: ObjectId,
 }
 
 const DEFAULT_SINK: &str = "default.configured.audio.sink";
@@ -64,8 +64,8 @@ pub fn monitor_metadata(
         .register();
 
     Some(MetadataTracker {
-        id: object_id,
-        listener: Box::new(listener),
+        _id: object_id,
+        _listener: Box::new(listener),
         metadata,
     })
 }
@@ -89,7 +89,6 @@ impl MetadataControl for Metadata {
 
     fn set_default_sink(&self, name: &str) {
         let name = &json!({"name": name}).to_string();
-        println!("{name}");
         self.set_prop_json(DEFAULT_SINK, Some(name));
     }
 }

@@ -14,4 +14,6 @@ pub use object_id::*;
 
 pub mod node;
 
+pub mod device;
+
 mod metadata;
