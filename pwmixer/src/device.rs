@@ -112,11 +112,13 @@ fn device_new_params(object: &Object, route_map: &Mutex<HashMap<i32, i32>>) {
 impl DeviceTracker {
     /// Set the properties for a specific route on this device.
     ///
-    /// If the `device_id` in `hints` does not much the id of this current device, nothing will
-    /// happen.
-    fn set_route_properties(&self, hints: &DeviceHints, properties: Vec<Property>) {
+    /// If the `device_id` in `hints` does not much the id of this current device, or this
+    /// device has no route for `hints.card_device` (e.g. bluez5 devices, which don't expose
+    /// per-route volume control the way ALSA cards do), nothing happens and `false` is
+    /// returned so the caller can fall back to setting the node's own volume/mute directly.
+    fn set_route_properties(&self, hints: &DeviceHints, properties: Vec<Property>) -> bool {
         if self.id != hints.device_id {
-            return;
+            return false;
         }
 
         // Find the route index corresponding to the `card_device` in the map
@@ -126,7 +128,7 @@ impl DeviceTracker {
             .get(&hints.card_device)
             .copied()
         else {
-            return;
+            return false;
         };
 
         let mut route_properties = vec![
@@ -173,11 +175,15 @@ impl DeviceTracker {
             && let Some(pod) = Pod::from_bytes(&values.into_inner())
         {
             self.device.set_param(ParamType::Route, 0, pod);
+            return true;
         }
+
+        false
     }
 
-    /// Set the volume for a specific route on this device.
-    pub(crate) fn set_route_volume(&self, hints: &DeviceHints, volume: f32) {
+    /// Set the volume for a specific route on this device. Returns `false` if this device has
+    /// no matching route, in which case the caller should fall back to `Node::set_volume`.
+    pub(crate) fn set_route_volume(&self, hints: &DeviceHints, volume: f32) -> bool {
         let volume = volume.powi(3).clamp(0.0, 1.0);
 
         self.set_route_properties(
@@ -187,11 +193,12 @@ impl DeviceTracker {
                 flags: PropertyFlags::empty(),
                 value: Value::ValueArray(ValueArray::Float(vec![volume])),
             }],
-        );
+        )
     }
 
-    /// Set wether the device is muted or not.
-    pub(crate) fn set_route_mute(&self, hints: &DeviceHints, muted: bool) {
+    /// Set wether the device is muted or not. Returns `false` if this device has no matching
+    /// route, in which case the caller should fall back to `Node::set_mute`.
+    pub(crate) fn set_route_mute(&self, hints: &DeviceHints, muted: bool) -> bool {
         self.set_route_properties(
             hints,
             vec![Property {
@@ -199,6 +206,6 @@ impl DeviceTracker {
                 flags: PropertyFlags::empty(),
                 value: Value::Bool(muted),
             }],
-        );
+        )
     }
 }

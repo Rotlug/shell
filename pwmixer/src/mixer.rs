@@ -138,20 +138,25 @@ impl Mixer {
         match command {
             Command::ChangeVolume(id, volume) => {
                 if let Some(node) = nodes.borrow().get(id) {
-                    // Set volume through the associated device if it exists.
-                    if let Some((device, hints)) = associated_device(node, &devices.borrow()) {
-                        device.set_route_volume(&hints, *volume);
-                    } else {
+                    // Set volume through the associated device if it exists and actually has
+                    // a matching route (e.g. bluez5 devices don't, unlike ALSA cards) -
+                    // otherwise fall back to setting the node's own volume directly.
+                    let routed = associated_device(node, &devices.borrow())
+                        .is_some_and(|(device, hints)| device.set_route_volume(&hints, *volume));
+
+                    if !routed {
                         node.set_volume(*volume);
                     }
                 }
             }
             Command::Mute(id, muted) => {
                 if let Some(node) = nodes.borrow().get(id) {
-                    // Set mute status through the associated device if it exists
-                    if let Some((device, hints)) = associated_device(node, &devices.borrow()) {
-                        device.set_route_mute(&hints, *muted);
-                    } else {
+                    // Set mute status through the associated device if it exists and actually
+                    // has a matching route - otherwise fall back to setting the node directly.
+                    let routed = associated_device(node, &devices.borrow())
+                        .is_some_and(|(device, hints)| device.set_route_mute(&hints, *muted));
+
+                    if !routed {
                         node.set_mute(*muted);
                     }
                 }
