@@ -18,8 +18,20 @@ pub struct MetadataTracker {
     pub _id: ObjectId,
 }
 
-const DEFAULT_SINK: &str = "default.configured.audio.sink";
-const DEFAULT_SOURCE: &str = "default.configured.audio.source";
+// `default.configured.audio.*` is the user's override *preference* - it's
+// only ever set after something explicitly changes the default, so it's
+// absent at startup even though a default sink/source is already active,
+// and it never changes on its own when WirePlumber auto-switches the
+// resolved default (e.g. a Bluetooth device connecting and becoming the
+// new default sink). `default.audio.*` is the actually-resolved current
+// default (always populated, updated on every resolution change), so
+// listening must watch that key instead; writes still target the
+// "configured" key, since that's the one WirePlumber treats as the
+// override to resolve against.
+const DEFAULT_SINK: &str = "default.audio.sink";
+const DEFAULT_SOURCE: &str = "default.audio.source";
+const DEFAULT_CONFIGURED_SINK: &str = "default.configured.audio.sink";
+const DEFAULT_CONFIGURED_SOURCE: &str = "default.configured.audio.source";
 
 #[must_use]
 pub fn monitor_metadata(
@@ -84,11 +96,11 @@ impl MetadataControl for Metadata {
     }
 
     fn set_default_source(&self, name: &str) {
-        self.set_prop_json(DEFAULT_SOURCE, Some(name));
+        self.set_prop_json(DEFAULT_CONFIGURED_SOURCE, Some(name));
     }
 
     fn set_default_sink(&self, name: &str) {
         let name = &json!({"name": name}).to_string();
-        self.set_prop_json(DEFAULT_SINK, Some(name));
+        self.set_prop_json(DEFAULT_CONFIGURED_SINK, Some(name));
     }
 }
