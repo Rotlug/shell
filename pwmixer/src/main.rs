@@ -6,16 +6,18 @@ use tokio::sync::mpsc;
 #[tokio::main]
 async fn main() {
     let (cmd_tx, cmd_rx) = mpsc::channel(16);
-    let (mixer, mut event_rx) = Mixer::new(cmd_rx);
+    let (_mixer, mut event_rx) = Mixer::new(cmd_rx);
 
     let mut nodes = HashMap::new();
 
     while let Some(event) = event_rx.recv().await {
         match event {
             Event::NodeAdded(node) => {
+                println!("New node detected: {node} ({:?})", node.kind);
                 nodes.insert(node.id, node);
-            }
+            } 
             Event::NodeRemoved(id) => {
+                println!("Node removed: {id} ({:?})", nodes.get(&id).unwrap().kind);
                 nodes.remove(&id);
             }
             Event::NodeVolumeChanged(id, vol) => {
